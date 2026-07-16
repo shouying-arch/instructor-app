@@ -85,6 +85,18 @@
     white-space: nowrap;
   }
 
+  /* Year nav */
+  .year-nav {
+    display: flex; align-items: center; gap: 10px; margin-top: 10px;
+  }
+  .year-nav button {
+    background: none; border: 1px solid var(--line-strong); border-radius: 8px;
+    width: 28px; height: 28px; font-size: 16px; color: var(--primary); cursor: pointer;
+    display: grid; place-items: center; line-height: 1;
+  }
+  .year-nav button:active { background: var(--primary-tint); }
+  #yearLabel { font-size: 14px; font-weight: 700; color: var(--ink-1); min-width: 52px; text-align: center; }
+
   /* Month segmented */
   .months {
     display: flex; gap: 5px; margin-top: 12px;
@@ -316,6 +328,11 @@
       <span class="demo-tag" style="color:var(--good);background:#e8f8f0;">☁ 雲端同步</span>
       <button class="fab" id="fab" aria-label="新增">＋</button>
     </div>
+    <div class="year-nav" id="yearNav">
+      <button id="yearPrev">‹</button>
+      <span id="yearLabel"></span>
+      <button id="yearNext">›</button>
+    </div>
     <div class="months" id="months"></div>
   </header>
 
@@ -341,9 +358,8 @@
 
 <script>
 "use strict";
-const YEAR = 2026;
 const WK = ["日","一","二","三","四","五","六"];
-const wk = (m,d) => WK[new Date(YEAR, m-1, d).getDay()];
+const wk = (m,d) => WK[new Date(curYear, m-1, d).getDay()];
 const fmt = n => n.toLocaleString("en-US");
 const pad = n => String(n).padStart(2,"0");
 // 時段：label 顯示、hours 自動帶入時數、start 行事曆起始時間（時）
@@ -442,7 +458,9 @@ const SEED = {
 
 const KEY = "instructor_v2";
 const API = "https://script.google.com/macros/s/AKfycbxzMtt7W8Po_JbDAwYVBkPHfjsZHL5obbAs24MHbYmR8DU7PAxijPytdNLRsHao9xuR/exec";
-let state, curMonth = 7, curTab = "pay";
+const _now = new Date();
+let curYear = _now.getFullYear(), curMonth = _now.getMonth()+1, curTab = "pay";
+let state;
 
 async function load() {
   try {
@@ -470,7 +488,7 @@ async function apiPost(data) {
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
 function uid(){ return "x" + Math.round(performance.now()*1000) + "_" + state.sessions.length + state.duties.length; }
 
-const MONTHS = [3,4,5,6,7,8,9,10];
+const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
 const el = id => document.getElementById(id);
 function courseNames(){
   return [...new Set(state.sessions.map(s=>s.course).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
@@ -487,8 +505,10 @@ function renderMonths(){
 }
 
 /* ---------- Pay tab ---------- */
+function sessYear(s){ return s.y ? Number(s.y) : 2026; }
+function dutyYear(d){ return d.y ? Number(d.y) : 2026; }
 function monthSessions(m){
-  return state.sessions.filter(s=>s.m===m).sort((a,b)=>a.d-b.d);
+  return state.sessions.filter(s=>Number(s.m)===m && sessYear(s)===curYear).sort((a,b)=>Number(a.d)-Number(b.d));
 }
 function recAmt(s){ return s.type==="fixed" ? (s.total||0) : (s.hours||0)*(s.rate||0); }
 
@@ -535,7 +555,7 @@ function renderPay(){
 
 /* ---------- Duty tab ---------- */
 function renderDuty(){
-  const list = state.duties.filter(d=>d.m===curMonth).sort((a,b)=>a.d-b.d);
+  const list = state.duties.filter(d=>Number(d.m)===curMonth && dutyYear(d)===curYear).sort((a,b)=>Number(a.d)-Number(b.d));
   let html = `
     <div class="summary" style="background:linear-gradient(158deg,var(--assist-role),#2c516c)">
       <div class="lbl">${curMonth}月 值班・勤務</div>
@@ -564,24 +584,25 @@ function catOf(c){
 }
 const CAT_COLOR = {"水上救生類":"var(--primary)","繩索類":"var(--accent)","其他課程":"var(--assist-role)"};
 function renderStat(){
+  const yearSessions = state.sessions.filter(s=>sessYear(s)===curYear);
   const byMonth = MONTHS.map(m=>{
-    const l = state.sessions.filter(s=>s.m===m);
-    return {m, total:l.reduce((a,s)=>a+s.hours*s.rate,0), hours:l.reduce((a,s)=>a+s.hours,0)};
+    const l = yearSessions.filter(s=>Number(s.m)===m);
+    return {m, total:l.reduce((a,s)=>a+recAmt(s),0), hours:l.reduce((a,s)=>a+(+s.hours||0),0)};
   });
   const grandTotal = byMonth.reduce((a,x)=>a+x.total,0);
   const grandHours = byMonth.reduce((a,x)=>a+x.hours,0);
-  const grandN = state.sessions.length;
+  const grandN = yearSessions.length;
   const maxT = Math.max(...byMonth.map(x=>x.total), 1);
   const dataMonths = byMonth.filter(x=>x.total>0);
   const rangeLabel = dataMonths.length ? `${dataMonths[0].m}–${dataMonths[dataMonths.length-1].m}月` : "尚無資料";
   const avg = dataMonths.length ? Math.round(grandTotal/dataMonths.length) : 0;
 
   const cats = {};
-  state.sessions.forEach(s=>{ const c=catOf(s.course); cats[c]=(cats[c]||0)+s.hours*s.rate; });
+  yearSessions.forEach(s=>{ const c=catOf(s.course); cats[c]=(cats[c]||0)+recAmt(s); });
   const catArr = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
 
   let html = `
-    <div class="section-h" style="margin-top:8px"><h2>累計總覽 · ${rangeLabel}</h2></div>
+    <div class="section-h" style="margin-top:8px"><h2>${curYear} 年累計 · ${rangeLabel}</h2></div>
     <div class="grand">
       <div class="g"><div class="n accent tnum">${fmt(grandTotal)}</div><div class="k">鐘點費合計 (元)</div></div>
       <div class="g"><div class="n tnum">${grandHours}</div><div class="k">總授課時數</div></div>
@@ -626,6 +647,8 @@ function render(){
   el("hdrTitle").textContent = curTab==="pay" ? "鐘點記錄" : curTab==="duty" ? "值班表" : "收入統計";
   el("hdrSub").textContent = curTab==="pay" ? "授課鐘點・自動算金額" : curTab==="duty" ? "每月值班・勤務登記" : "累計收入與分析";
   el("fab").style.display = (curTab==="stat") ? "none" : "grid";
+  el("yearLabel").textContent = curYear + " 年";
+  el("yearNav").style.display = (curTab==="stat") ? "none" : "flex";
   renderMonths();
   if (curTab==="pay") renderPay();
   else if (curTab==="duty") renderDuty();
@@ -641,9 +664,9 @@ function paySheet(existing){
   const isFixed = existing && existing.type==="fixed";
   const s = existing || {m:curMonth, d:1, course:"", role:"main", slot:"full", hours:8, rate:800};
   const curSlot = s.slot && SLOTS[s.slot] ? s.slot : "full";
-  const dateVal = `${YEAR}-${pad(s.m)}-${pad(s.d)}`;
-  const minM = MONTHS[0], maxM = MONTHS[MONTHS.length-1];
-  const lastDay = new Date(YEAR, maxM, 0).getDate();
+  const sYear = s.y ? Number(s.y) : curYear;
+  const dateVal = `${sYear}-${pad(s.m)}-${pad(s.d)}`;
+  const lastDay = new Date(curYear, 12, 0).getDate();
   openSheet(`
     <h3>${existing?"編輯授課":"新增授課"}</h3>
     <div class="field">
@@ -653,7 +676,7 @@ function paySheet(existing){
       </div>
     </div>
     <div class="field"><label>開始日期</label>
-      <input id="f_date" type="date" value="${dateVal}" min="${YEAR}-${pad(minM)}-01" max="${YEAR}-${pad(maxM)}-${pad(lastDay)}">
+      <input id="f_date" type="date" value="${dateVal}" min="${curYear}-01-01" max="${curYear}-12-${pad(lastDay)}">
       <div class="wk-hint" id="f_wk"></div>
     </div>
     <div id="hourly-fields">
@@ -740,9 +763,9 @@ function paySheet(existing){
     };
     if (t==="fixed"){
       const days = +el("f_days").value||5;
-      return {...base, type:"fixed", days, hours: days*8, total:+el("f_total").value||0, slot:"full", rate:0};
+      return {...base, y:curYear, type:"fixed", days, hours: days*8, total:+el("f_total").value||0, slot:"full", rate:0};
     }
-    return {...base, type:"hourly",
+    return {...base, y:curYear, type:"hourly",
       slot: el("f_slot").querySelector('[aria-pressed="true"]').dataset.p,
       hours:+el("f_hours").value||0, rate:+el("f_rate").value||0
     };
@@ -766,7 +789,7 @@ function calUrl(rec){
   const slot = SLOTS[rec.slot] || SLOTS.full;
   const sh = slot.start, eh = Math.min(sh + (rec.hours||0), 23.983);
   const stamp = h => { const hh=Math.floor(h), mm=Math.round((h-hh)*60);
-    return `${YEAR}${pad(rec.m)}${pad(rec.d)}T${pad(hh)}${pad(mm)}00`; };
+    const y = rec.y || curYear; return `${y}${pad(rec.m)}${pad(rec.d)}T${pad(hh)}${pad(mm)}00`; };
   const title = `${rec.course}（${rec.role==="main"?"主教":"助教"}）`;
   const details = `時段：${slot.label}\n時數：${rec.hours} 時\n時薪：${fmt(rec.rate)} 元\n金額：${fmt(rec.hours*rec.rate)} 元`;
   return "https://calendar.google.com/calendar/render?action=TEMPLATE"
@@ -814,6 +837,8 @@ el("months").addEventListener("click", e=>{
 });
 document.querySelectorAll(".tab").forEach(t=> t.addEventListener("click", ()=>{ curTab = t.dataset.tab; render(); }));
 el("fab").addEventListener("click", ()=>{ curTab==="duty" ? dutySheet() : paySheet(); });
+el("yearPrev").addEventListener("click", ()=>{ curYear--; render(); });
+el("yearNext").addEventListener("click", ()=>{ curYear++; render(); });
 el("main").addEventListener("click", e=>{
   const pe = e.target.closest("[data-edit]");
   const de = e.target.closest("[data-editd]");
