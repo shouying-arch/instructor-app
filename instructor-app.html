@@ -603,10 +603,12 @@ function entryHtml(s){
 
 function dutyHtml(d){
   const today = isTodayRec(d);
+  const fee = +d.fee||0;
   return `<div class="duty${today?" today-row":""}" data-editd="${d.id}">
     <div class="date-badge"><div class="d tnum">${d.d}</div><div class="w">週${wk(d.m,d.d)}</div></div>
     <div class="body"><div class="post">${esc(d.post)}</div><div class="note">${esc(d.note||"")}</div></div>
     <div class="shift-tag">${esc(d.shift)}</div>
+    ${fee?`<div class="entry-amt"><div class="a tnum">${fmt(fee)}</div><div class="r">元</div></div>`:""}
   </div>`;
 }
 
@@ -718,7 +720,9 @@ function renderDuty(){
     <div class="summary" style="background:linear-gradient(158deg,var(--assist-role),#2c516c)">
       <div class="lbl">${curMonth}月 值班・勤務</div>
       <div class="big tnum">${list.length}<small style="margin-left:6px">班</small></div>
-      <div class="row"><div class="stat" style="flex:none;padding-right:16px"><div class="n">記錄你的每月值班與勤務</div></div></div>
+      <div class="row">
+        <div class="stat"><div class="n tnum">${fmt(list.reduce((a,d)=>a+(+d.fee||0),0))}</div><div class="k">值班費合計 (元)</div></div>
+      </div>
     </div>
     <div class="section-h"><h2>本月值班</h2><span class="count">${list.length} 筆</span>
       <div class="view-seg">
@@ -876,6 +880,7 @@ function paySheet(existing){
     <div id="duty-fields" style="display:none">
       <div class="field"><label>時段</label><input id="f_dshift" type="text" value="24時值班" placeholder="例：24時值班 / 夜間留守"></div>
       <div class="field"><label>勤務內容</label><input id="f_dpost" type="text" placeholder="例：隊部值星"></div>
+      <div class="field"><label>值班費 (元)<span style="font-weight:400;color:var(--ink-3)"> · 可修改</span></label><input id="f_dfee" type="number" min="0" step="100" value="3200"></div>
       <div class="field"><label>備註</label><input id="f_dnote" type="text" placeholder="選填"></div>
     </div>
     <div class="sheet-actions">
@@ -934,6 +939,7 @@ function paySheet(existing){
       return { _duty:true, m:m||curMonth, d:d||1,
         shift:el("f_dshift").value.trim()||"值班",
         post:el("f_dpost").value.trim()||"勤務",
+        fee:+el("f_dfee").value||0,
         note:el("f_dnote").value.trim() };
     }
     const base = {
@@ -992,6 +998,7 @@ function dutySheet(existing){
     </div>
     <div class="field"><label>時段</label><input id="d_shift" type="text" value="${esc(d.shift)}" placeholder="例：24時值班 / 夜間留守"></div>
     <div class="field"><label>勤務內容</label><input id="d_post" type="text" value="${esc(d.post)}" placeholder="例：隊部值星"></div>
+    <div class="field"><label>值班費 (元)<span style="font-weight:400;color:var(--ink-3)"> · 可修改</span></label><input id="d_fee" type="number" min="0" step="100" value="${d.fee!=null&&d.fee!==""?d.fee:3200}"></div>
     <div class="field"><label>備註</label><input id="d_note" type="text" value="${esc(d.note||"")}" placeholder="選填"></div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="d_cancel">取消</button>
@@ -1002,7 +1009,7 @@ function dutySheet(existing){
   el("d_cancel").onclick = closeSheet;
   el("d_save").onclick = ()=>{
     const rec = { m:+el("d_m").value, d:+el("d_d").value||1, shift:el("d_shift").value.trim()||"值班",
-      post:el("d_post").value.trim()||"勤務", note:el("d_note").value.trim() };
+      post:el("d_post").value.trim()||"勤務", fee:+el("d_fee").value||0, note:el("d_note").value.trim() };
     if (existing){ Object.assign(existing, rec); apiPost({action:'update',sheet:'duties',id:existing.id,row:existing}); }
     else { rec.id = uid(); state.duties.push(rec); apiPost({action:'add',sheet:'duties',row:rec}); }
     save(); if (rec.m) curMonth = rec.m; selDay = rec.d; closeSheet(); render();
