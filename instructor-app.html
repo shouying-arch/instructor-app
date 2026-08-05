@@ -635,7 +635,7 @@ function calHtml(list, duties, mode){
     if (info && mode==="pay"){
       dots = info.s.slice(0,3).map(s=>`<span class="cal-dot ${s.role==="main"?"s":"a"}"></span>`).join("")
         + info.du.slice(0,2).map(()=>`<span class="cal-dot du"></span>`).join("");
-      const amt = info.s.reduce((a,s)=>a+recAmt(s),0);
+      const amt = info.s.reduce((a,s)=>a+recAmt(s),0) + dutyFeeOf(info.du);
       if (amt) sub = `<span class="cal-amt tnum">${fmt(amt)}</span>`;
     } else if (info && mode==="duty" && info.du.length){
       dots = info.du.slice(0,3).map(()=>`<span class="cal-dot du"></span>`).join("");
@@ -677,22 +677,26 @@ function calHtml(list, duties, mode){
   return html;
 }
 
+function dutyFeeOf(list){ return list.reduce((a,d)=>a+(+d.fee||0),0); }
+
 function renderPay(){
   const list = monthSessions(curMonth);
   const duties = monthDuties(curMonth);
-  const total = list.reduce((a,s)=>a+recAmt(s),0);
+  const dutyFee = dutyFeeOf(duties);
+  const total = list.reduce((a,s)=>a+recAmt(s),0) + dutyFee;
   const hours = list.reduce((a,s)=>a+s.hours,0);
   const mainN = list.filter(s=>s.role==="main").length;
   const assistN = list.filter(s=>s.role==="assist").length;
 
   let html = `
     <div class="summary">
-      <div class="lbl">${curMonth}月 授課鐘點費</div>
+      <div class="lbl">${curMonth}月 鐘點費＋值班費</div>
       <div class="big tnum"><small>NT$</small>${fmt(total)}</div>
       <div class="row">
         <div class="stat"><div class="n tnum">${list.length}</div><div class="k">堂數</div></div>
         <div class="stat"><div class="n tnum">${hours}</div><div class="k">總時數</div></div>
         <div class="stat"><div class="n tnum">${mainN}<span style="opacity:.6">/</span>${assistN}</div><div class="k">主教／助教</div></div>
+        <div class="stat"><div class="n tnum">${fmt(dutyFee)}</div><div class="k">值班費</div></div>
       </div>
     </div>
     <div class="section-h"><h2>授課明細</h2><span class="count">${list.length} 筆</span>
@@ -747,12 +751,14 @@ function catOf(c){
   if (c.includes("水上") || c.includes("海洋") || c.includes("警大水上")) return "水上救生類";
   return "其他課程";
 }
-const CAT_COLOR = {"水上救生類":"var(--primary)","繩索類":"var(--accent)","其他課程":"var(--assist-role)"};
+const CAT_COLOR = {"水上救生類":"var(--primary)","繩索類":"var(--accent)","其他課程":"var(--assist-role)","值班費":"var(--good)"};
 function renderStat(){
   const yearSessions = state.sessions.filter(s=>sessYear(s)===curYear);
+  const yearDuties = state.duties.filter(d=>dutyYear(d)===curYear);
   const byMonth = MONTHS.map(m=>{
     const l = yearSessions.filter(s=>Number(s.m)===m);
-    return {m, total:l.reduce((a,s)=>a+recAmt(s),0), hours:l.reduce((a,s)=>a+(+s.hours||0),0)};
+    const du = yearDuties.filter(d=>Number(d.m)===m);
+    return {m, total:l.reduce((a,s)=>a+recAmt(s),0) + dutyFeeOf(du), hours:l.reduce((a,s)=>a+(+s.hours||0),0)};
   });
   const grandTotal = byMonth.reduce((a,x)=>a+x.total,0);
   const grandHours = byMonth.reduce((a,x)=>a+x.hours,0);
@@ -764,12 +770,14 @@ function renderStat(){
 
   const cats = {};
   yearSessions.forEach(s=>{ const c=catOf(s.course); cats[c]=(cats[c]||0)+recAmt(s); });
+  const yearDutyFee = dutyFeeOf(yearDuties);
+  if (yearDutyFee) cats["值班費"] = yearDutyFee;
   const catArr = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
 
   let html = `
     <div class="section-h" style="margin-top:8px"><h2>${curYear} 年累計 · ${rangeLabel}</h2></div>
     <div class="grand">
-      <div class="g"><div class="n accent tnum">${fmt(grandTotal)}</div><div class="k">鐘點費合計 (元)</div></div>
+      <div class="g"><div class="n accent tnum">${fmt(grandTotal)}</div><div class="k">鐘點＋值班費合計 (元)</div></div>
       <div class="g"><div class="n tnum">${grandHours}</div><div class="k">總授課時數</div></div>
     </div>
     <div class="grand" style="margin-top:10px">
@@ -778,7 +786,7 @@ function renderStat(){
     </div>
 
     <div class="stat-card" style="margin-top:16px">
-      <h3>每月鐘點費</h3>
+      <h3>每月收入（鐘點＋值班費）</h3>
       ${byMonth.map(x=>`
         <div class="bar-row">
           <div class="k">${x.m}月</div>
@@ -788,7 +796,7 @@ function renderStat(){
     </div>
 
     <div class="stat-card">
-      <h3>課程類別佔比</h3>
+      <h3>收入類別佔比</h3>
       ${catArr.map(([k,v])=>`
         <div class="cat-row">
           <span class="dot" style="background:${CAT_COLOR[k]}"></span>
