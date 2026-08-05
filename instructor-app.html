@@ -96,6 +96,11 @@
   }
   .year-nav button:active { background: var(--primary-tint); }
   #yearLabel { font-size: 14px; font-weight: 700; color: var(--ink-1); min-width: 52px; text-align: center; }
+  .year-nav .today-btn {
+    width: auto; margin-left: auto; padding: 0 12px; font-size: 12px; font-weight: 700;
+    color: var(--accent); border-color: var(--accent);
+  }
+  .year-nav .today-btn:active { background: var(--accent-tint); }
 
   /* Month segmented */
   .months {
@@ -141,6 +146,60 @@
   }
   .section-h h2 { font-size: 13px; font-weight: 700; margin: 0; color: var(--ink-2); letter-spacing: .4px; }
   .section-h .count { font-size: 11px; color: var(--ink-3); }
+
+  /* View toggle (月曆 / 列表) */
+  .view-seg { display: flex; gap: 4px; margin-left: auto; align-self: center; }
+  .view-seg button {
+    font-family: inherit; font-size: 11px; font-weight: 700; padding: 4px 11px;
+    border: 1px solid var(--line-strong); background: var(--card); color: var(--ink-3);
+    border-radius: 999px; cursor: pointer; transition: .12s;
+  }
+  .view-seg button[aria-pressed="true"] {
+    background: var(--primary); border-color: var(--primary); color: #fff;
+  }
+
+  /* Calendar */
+  .cal-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 10px 6px 8px;
+  }
+  .cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .cal-grid { row-gap: 3px; }
+  .cal-wd { text-align: center; font-size: 10.5px; font-weight: 700; color: var(--ink-3); padding: 2px 0 7px; letter-spacing: .5px; }
+  .cal-wd.wknd { color: #c0453b; opacity: .75; }
+  .cal-cell {
+    min-height: 54px; border-radius: 10px; padding: 4px 1px 3px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    border: 1.5px solid transparent; transition: .12s;
+  }
+  .cal-cell:active { background: var(--card-2); }
+  .cal-cell.blank { cursor: default; }
+  .cal-cell.blank:active { background: none; }
+  .cal-cell .dn {
+    font-size: 13px; font-weight: 600; width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center; line-height: 1;
+  }
+  .cal-cell .dn.wknd { color: #c0453b; }
+  .cal-cell.today .dn { background: var(--accent); color: #fff; font-weight: 800; }
+  .cal-cell.sel { background: var(--primary-tint); border-color: var(--primary); }
+  .cal-dots { display: flex; gap: 3px; justify-content: center; min-height: 6px; margin-top: 1px; }
+  .cal-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .cal-dot.s { background: var(--main-role); }
+  .cal-dot.a { background: var(--assist-role); }
+  .cal-dot.du { background: var(--accent); }
+  .cal-amt { font-size: 9px; font-weight: 700; color: var(--ink-2); line-height: 1.2; }
+  .cal-legend {
+    display: flex; gap: 12px; justify-content: center; margin-top: 8px; padding-top: 7px;
+    border-top: 1px solid var(--line); font-size: 10.5px; color: var(--ink-3);
+  }
+  .cal-legend span { display: flex; align-items: center; gap: 4px; }
+
+  /* 今天的列表項目 */
+  .entry.today-row, .duty.today-row { border-color: var(--accent); }
+  .today-tag {
+    font-size: 9.5px; font-weight: 800; color: #fff; background: var(--accent);
+    padding: 1px 6px; border-radius: 999px; letter-spacing: .5px;
+  }
 
   /* Entry list */
   .list { display: flex; flex-direction: column; gap: 8px; }
@@ -332,6 +391,7 @@
       <button id="yearPrev">‹</button>
       <span id="yearLabel"></span>
       <button id="yearNext">›</button>
+      <button id="todayBtn" class="today-btn">回到今天</button>
     </div>
     <div class="months" id="months"></div>
   </header>
@@ -459,7 +519,12 @@ const SEED = {
 const KEY = "instructor_v2";
 const API = "https://script.google.com/macros/s/AKfycbxzMtt7W8Po_JbDAwYVBkPHfjsZHL5obbAs24MHbYmR8DU7PAxijPytdNLRsHao9xuR/exec";
 const _now = new Date();
-let curYear = _now.getFullYear(), curMonth = _now.getMonth()+1, curTab = "pay";
+const _today = { y: _now.getFullYear(), m: _now.getMonth()+1, d: _now.getDate() };
+let curYear = _today.y, curMonth = _today.m, curTab = "pay";
+let payView = "cal";    // 鐘點費頁檢視：每次打開都從月曆開始
+let dutyView = "cal";   // 值班頁檢視：預設月曆
+let selDay = _today.d;   // 月曆目前選取的日期（非本月時為 null）
+function isCurMonthView(){ return curYear===_today.y && curMonth===_today.m; }
 let state;
 
 async function load() {
@@ -502,6 +567,9 @@ function renderMonths(){
   wrap.innerHTML = MONTHS.map(m =>
     `<button class="month-chip" data-m="${m}" aria-pressed="${m===curMonth}">${m}月</button>`
   ).join("");
+  // 自動把當前月份 chip 捲到可視範圍置中
+  const act = wrap.querySelector('[aria-pressed="true"]');
+  if (act) wrap.scrollLeft = Math.max(0, act.offsetLeft - wrap.clientWidth/2 + act.offsetWidth/2);
 }
 
 /* ---------- Pay tab ---------- */
@@ -512,8 +580,102 @@ function monthSessions(m){
 }
 function recAmt(s){ return s.type==="fixed" ? (s.total||0) : (s.hours||0)*(s.rate||0); }
 
+function isTodayRec(r){ return isCurMonthView() && Number(r.d)===_today.d; }
+
+function entryHtml(s){
+  const amt = recAmt(s);
+  const roleTxt = s.role==="main" ? "主教" : "助教";
+  const metaRight = s.type==="fixed"
+    ? `<span class="hrs tnum">${s.days||5} 天・總價</span>`
+    : `${s.slot&&SLOTS[s.slot]?`<span class="time-pill">${SLOTS[s.slot].label}</span>`:""}<span class="hrs tnum">${s.hours} 時 × ${fmt(s.rate)}</span>`;
+  const today = isTodayRec(s);
+  return `<div class="entry${today?" today-row":""}" data-edit="${s.id}">
+    <div class="date-badge"><div class="d tnum">${s.d}</div><div class="w">週${wk(s.m,s.d)}</div></div>
+    <div class="entry-body">
+      <div class="course">${esc(s.course)}</div>
+      <div class="meta"><span class="pill ${s.role}">${roleTxt}</span>${metaRight}${today?`<span class="today-tag">今天</span>`:""}</div>
+    </div>
+    <div class="entry-amt"><div class="a tnum">${fmt(amt)}</div><div class="r">元</div></div>
+  </div>`;
+}
+
+function dutyHtml(d){
+  const today = isTodayRec(d);
+  return `<div class="duty${today?" today-row":""}" data-editd="${d.id}">
+    <div class="date-badge"><div class="d tnum">${d.d}</div><div class="w">週${wk(d.m,d.d)}</div></div>
+    <div class="body"><div class="post">${esc(d.post)}</div><div class="note">${esc(d.note||"")}</div></div>
+    <div class="shift-tag">${esc(d.shift)}</div>
+  </div>`;
+}
+
+function monthDuties(m){
+  return state.duties.filter(d=>Number(d.m)===m && dutyYear(d)===curYear).sort((a,b)=>Number(a.d)-Number(b.d));
+}
+
+/* 月曆檢視。mode="pay"：課程圓點＋當日金額＋值班點；mode="duty"：只畫值班（琥珀點＋時段字樣） */
+function calHtml(list, duties, mode){
+  mode = mode || "pay";
+  const byDay = {};
+  const day = n => byDay[n] || (byDay[n] = {s:[], du:[]});
+  list.forEach(s=> day(Number(s.d)).s.push(s));
+  duties.forEach(d=> day(Number(d.d)).du.push(d));
+  const firstW = new Date(curYear, curMonth-1, 1).getDay();
+  const nDays = new Date(curYear, curMonth, 0).getDate();
+
+  let cells = "";
+  for (let i=0;i<firstW;i++) cells += `<div class="cal-cell blank"></div>`;
+  for (let d=1; d<=nDays; d++){
+    const info = byDay[d];
+    const w = new Date(curYear, curMonth-1, d).getDay();
+    let dots = "", sub = "";
+    if (info && mode==="pay"){
+      dots = info.s.slice(0,3).map(s=>`<span class="cal-dot ${s.role==="main"?"s":"a"}"></span>`).join("")
+        + info.du.slice(0,2).map(()=>`<span class="cal-dot du"></span>`).join("");
+      const amt = info.s.reduce((a,s)=>a+recAmt(s),0);
+      if (amt) sub = `<span class="cal-amt tnum">${fmt(amt)}</span>`;
+    } else if (info && mode==="duty" && info.du.length){
+      dots = info.du.slice(0,3).map(()=>`<span class="cal-dot du"></span>`).join("");
+      sub = `<span class="cal-amt">${esc(String(info.du[0].shift||"").slice(0,3))}</span>`;
+    }
+    cells += `<div class="cal-cell${isCurMonthView()&&d===_today.d?" today":""}${selDay===d?" sel":""}" data-day="${d}">
+      <span class="dn${(w===0||w===6)?" wknd":""}">${d}</span>
+      <span class="cal-dots">${dots}</span>
+      ${sub}
+    </div>`;
+  }
+
+  const legend = mode==="pay"
+    ? `<span><span class="cal-dot s"></span>主教</span>
+       <span><span class="cal-dot a"></span>助教</span>
+       <span><span class="cal-dot du"></span>值班</span>`
+    : `<span><span class="cal-dot du"></span>值班日</span>`;
+
+  let html = `<div class="cal-card">
+    <div class="cal-week">${WK.map((w,i)=>`<div class="cal-wd${(i===0||i===6)?" wknd":""}">${w}</div>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-legend">${legend}</div>
+  </div>`;
+
+  if (selDay){
+    const info = byDay[selDay];
+    const n = !info ? 0 : (mode==="pay" ? info.s.length + info.du.length : info.du.length);
+    html += `<div class="section-h"><h2>${curMonth}月${selDay}日 · 週${wk(curMonth,selDay)}${isCurMonthView()&&selDay===_today.d?"（今天）":""}</h2><span class="count">${n} 筆</span></div>`;
+    if (!n){
+      html += `<div class="empty" style="padding:22px 20px">這天沒有${mode==="duty"?"值班":"紀錄"}，點右下角 ＋ 新增</div>`;
+    } else if (mode==="pay"){
+      html += `<div class="list">` + (info.s.map(entryHtml).join("")) + (info.du.map(dutyHtml).join("")) + `</div>`;
+    } else {
+      html += `<div class="list">` + info.du.map(dutyHtml).join("") + `</div>`;
+    }
+  } else {
+    html += `<div class="empty" style="padding:18px 20px;margin-top:10px">點上方日期看當天明細</div>`;
+  }
+  return html;
+}
+
 function renderPay(){
   const list = monthSessions(curMonth);
+  const duties = monthDuties(curMonth);
   const total = list.reduce((a,s)=>a+recAmt(s),0);
   const hours = list.reduce((a,s)=>a+s.hours,0);
   const mainN = list.filter(s=>s.role==="main").length;
@@ -529,49 +691,44 @@ function renderPay(){
         <div class="stat"><div class="n tnum">${mainN}<span style="opacity:.6">/</span>${assistN}</div><div class="k">主教／助教</div></div>
       </div>
     </div>
-    <div class="section-h"><h2>授課明細</h2><span class="count">${list.length} 筆</span></div>`;
+    <div class="section-h"><h2>授課明細</h2><span class="count">${list.length} 筆</span>
+      <div class="view-seg">
+        <button data-view="cal" aria-pressed="${payView==="cal"}">月曆</button>
+        <button data-view="list" aria-pressed="${payView==="list"}">列表</button>
+      </div>
+    </div>`;
 
-  if (!list.length){
+  if (payView==="cal"){
+    html += calHtml(list, duties);
+  } else if (!list.length){
     html += `<div class="empty"><span class="em">📋</span>${curMonth}月還沒有紀錄<br>點右下角 ＋ 新增一筆</div>`;
   } else {
-    html += `<div class="list">` + list.map(s=>{
-      const amt = recAmt(s);
-      const roleTxt = s.role==="main" ? "主教" : "助教";
-      const metaRight = s.type==="fixed"
-        ? `<span class="hrs tnum">${s.days||5} 天・總價</span>`
-        : `${s.slot&&SLOTS[s.slot]?`<span class="time-pill">${SLOTS[s.slot].label}</span>`:""}<span class="hrs tnum">${s.hours} 時 × ${fmt(s.rate)}</span>`;
-      return `<div class="entry" data-edit="${s.id}">
-        <div class="date-badge"><div class="d tnum">${s.d}</div><div class="w">週${wk(s.m,s.d)}</div></div>
-        <div class="entry-body">
-          <div class="course">${esc(s.course)}</div>
-          <div class="meta"><span class="pill ${s.role}">${roleTxt}</span>${metaRight}</div>
-        </div>
-        <div class="entry-amt"><div class="a tnum">${fmt(amt)}</div><div class="r">元</div></div>
-      </div>`;
-    }).join("") + `</div>`;
+    html += `<div class="list">` + list.map(entryHtml).join("") + `</div>`;
   }
   el("main").innerHTML = html;
 }
 
 /* ---------- Duty tab ---------- */
 function renderDuty(){
-  const list = state.duties.filter(d=>Number(d.m)===curMonth && dutyYear(d)===curYear).sort((a,b)=>Number(a.d)-Number(b.d));
+  const list = monthDuties(curMonth);
   let html = `
     <div class="summary" style="background:linear-gradient(158deg,var(--assist-role),#2c516c)">
       <div class="lbl">${curMonth}月 值班・勤務</div>
       <div class="big tnum">${list.length}<small style="margin-left:6px">班</small></div>
       <div class="row"><div class="stat" style="flex:none;padding-right:16px"><div class="n">記錄你的每月值班與勤務</div></div></div>
     </div>
-    <div class="section-h"><h2>本月值班</h2><span class="count">${list.length} 筆</span></div>`;
-  if (!list.length){
+    <div class="section-h"><h2>本月值班</h2><span class="count">${list.length} 筆</span>
+      <div class="view-seg">
+        <button data-view="cal" aria-pressed="${dutyView==="cal"}">月曆</button>
+        <button data-view="list" aria-pressed="${dutyView==="list"}">列表</button>
+      </div>
+    </div>`;
+  if (dutyView==="cal"){
+    html += calHtml([], list, "duty");
+  } else if (!list.length){
     html += `<div class="empty"><span class="em">🗓️</span>${curMonth}月還沒有值班紀錄<br>點右下角 ＋ 新增一筆</div>`;
   } else {
-    html += `<div class="list">` + list.map(d=>`
-      <div class="duty" data-editd="${d.id}">
-        <div class="date-badge"><div class="d tnum">${d.d}</div><div class="w">週${wk(d.m,d.d)}</div></div>
-        <div class="body"><div class="post">${esc(d.post)}</div><div class="note">${esc(d.note||"")}</div></div>
-        <div class="shift-tag">${esc(d.shift)}</div>
-      </div>`).join("") + `</div>`;
+    html += `<div class="list">` + list.map(dutyHtml).join("") + `</div>`;
   }
   el("main").innerHTML = html;
 }
@@ -660,19 +817,22 @@ function render(){
 function openSheet(html){ el("sheet").innerHTML = `<div class="grabber"></div>` + html; el("backdrop").classList.add("open"); }
 function closeSheet(){ el("backdrop").classList.remove("open"); }
 
+function defaultDay(){ return selDay || (isCurMonthView() ? _today.d : 1); }
+
 function paySheet(existing){
   const isFixed = existing && existing.type==="fixed";
-  const s = existing || {m:curMonth, d:1, course:"", role:"main", slot:"full", hours:8, rate:800};
+  const s = existing || {m:curMonth, d:defaultDay(), course:"", role:"main", slot:"full", hours:8, rate:800};
   const curSlot = s.slot && SLOTS[s.slot] ? s.slot : "full";
   const sYear = s.y ? Number(s.y) : curYear;
   const dateVal = `${sYear}-${pad(s.m)}-${pad(s.d)}`;
   const lastDay = new Date(curYear, 12, 0).getDate();
   openSheet(`
-    <h3>${existing?"編輯授課":"新增授課"}</h3>
+    <h3>${existing?"編輯授課":"新增紀錄"}</h3>
     <div class="field">
       <div class="seg" id="f_type">
         <button type="button" data-t="hourly" aria-pressed="${!isFixed}">鐘點費</button>
         <button type="button" data-t="fixed"  aria-pressed="${isFixed}">總價課程</button>
+        ${existing?"":`<button type="button" data-t="duty" aria-pressed="false">值班</button>`}
       </div>
     </div>
     <div class="field"><label>開始日期</label>
@@ -686,11 +846,11 @@ function paySheet(existing){
         </div>
       </div>
     </div>
-    <div class="field"><label>課程名稱<span style="font-weight:400;color:var(--ink-3)"> · 可下拉選用過的</span></label>
+    <div class="field" id="course-field"><label>課程名稱<span style="font-weight:400;color:var(--ink-3)"> · 可下拉選用過的</span></label>
       <input id="f_course" type="text" list="courseList" autocomplete="off" value="${esc(s.course)}" placeholder="點一下可選，或直接打新的">
       <datalist id="courseList">${courseNames().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>
     </div>
-    <div class="field"><label>身分</label>
+    <div class="field" id="role-field"><label>身分</label>
       <div class="seg" id="f_role">
         <button type="button" data-r="main" aria-pressed="${s.role==="main"}">主教</button>
         <button type="button" data-r="assist" aria-pressed="${s.role==="assist"}">助教</button>
@@ -709,6 +869,11 @@ function paySheet(existing){
         <div class="field"><label>總金額 (元)</label><input id="f_total" type="number" min="0" step="100" value="${s.total||""}"></div>
       </div>
       <div class="calc-preview"><span class="k">總價課程・固定費用</span><span class="v tnum" id="f_calc_fixed">—</span></div>
+    </div>
+    <div id="duty-fields" style="display:none">
+      <div class="field"><label>時段</label><input id="f_dshift" type="text" value="24時值班" placeholder="例：24時值班 / 夜間留守"></div>
+      <div class="field"><label>勤務內容</label><input id="f_dpost" type="text" placeholder="例：隊部值星"></div>
+      <div class="field"><label>備註</label><input id="f_dnote" type="text" placeholder="選填"></div>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="f_cancel">取消</button>
@@ -729,9 +894,13 @@ function paySheet(existing){
   };
   const curType = ()=> el("f_type").querySelector('[aria-pressed="true"]').dataset.t;
   const switchType = (t)=>{
-    el("hourly-fields").style.display = t==="fixed" ? "none" : "";
-    el("hourly-calc").style.display   = t==="fixed" ? "none" : "";
+    el("hourly-fields").style.display = t==="hourly" ? "" : "none";
+    el("hourly-calc").style.display   = t==="hourly" ? "" : "none";
     el("fixed-fields").style.display  = t==="fixed" ? "" : "none";
+    el("duty-fields").style.display   = t==="duty" ? "" : "none";
+    el("course-field").style.display  = t==="duty" ? "none" : "";
+    el("role-field").style.display    = t==="duty" ? "none" : "";
+    el("f_cal").style.display         = t==="duty" ? "none" : "";
   };
   const calc = ()=>{ el("f_calc").textContent = fmt((+el("f_hours").value||0)*(+el("f_rate").value||0)); };
   const calcFixed = ()=>{ const v=+el("f_total").value||0; el("f_calc_fixed").textContent = v ? fmt(v)+" 元" : "—"; };
@@ -757,6 +926,13 @@ function paySheet(existing){
   const readForm = ()=>{
     const {m,d} = parseDate();
     const t = curType();
+    if (t==="duty"){
+      // 值班：存到 duties（與值班頁同一張表）
+      return { _duty:true, m:m||curMonth, d:d||1,
+        shift:el("f_dshift").value.trim()||"值班",
+        post:el("f_dpost").value.trim()||"勤務",
+        note:el("f_dnote").value.trim() };
+    }
     const base = {
       m: m||curMonth, d: d||1, course:el("f_course").value.trim()||"未命名課程",
       role: el("f_role").querySelector('[aria-pressed="true"]').dataset.r,
@@ -774,9 +950,13 @@ function paySheet(existing){
   el("f_cal").onclick = ()=>{ window.open(calUrl(readForm()), "_blank", "noopener"); };
   el("f_save").onclick = ()=>{
     const rec = readForm();
-    if (existing){ Object.assign(existing, rec); apiPost({action:'update',sheet:'sessions',id:existing.id,row:existing}); }
+    if (rec._duty){
+      delete rec._duty;
+      rec.id = uid(); state.duties.push(rec); apiPost({action:'add',sheet:'duties',row:rec});
+    }
+    else if (existing){ Object.assign(existing, rec); apiPost({action:'update',sheet:'sessions',id:existing.id,row:existing}); }
     else { rec.id = uid(); state.sessions.push(rec); apiPost({action:'add',sheet:'sessions',row:rec}); }
-    save(); curMonth = rec.m; closeSheet(); render();
+    save(); curMonth = rec.m; selDay = rec.d; closeSheet(); render();
   };
   if (existing) el("f_del").onclick = ()=>{
     apiPost({action:'delete',sheet:'sessions',id:existing.id});
@@ -799,7 +979,7 @@ function calUrl(rec){
 }
 
 function dutySheet(existing){
-  const d = existing || {m:curMonth, d:1, shift:"24時值班", post:"", note:""};
+  const d = existing || {m:curMonth, d:defaultDay(), shift:"24時值班", post:"", note:""};
   openSheet(`
     <h3>${existing?"編輯值班":"新增值班"}</h3>
     <div class="row2">
@@ -822,7 +1002,7 @@ function dutySheet(existing){
       post:el("d_post").value.trim()||"勤務", note:el("d_note").value.trim() };
     if (existing){ Object.assign(existing, rec); apiPost({action:'update',sheet:'duties',id:existing.id,row:existing}); }
     else { rec.id = uid(); state.duties.push(rec); apiPost({action:'add',sheet:'duties',row:rec}); }
-    save(); if (rec.m) curMonth = rec.m; closeSheet(); render();
+    save(); if (rec.m) curMonth = rec.m; selDay = rec.d; closeSheet(); render();
   };
   if (existing) el("d_del").onclick = ()=>{
     apiPost({action:'delete',sheet:'duties',id:existing.id});
@@ -831,18 +1011,24 @@ function dutySheet(existing){
 }
 
 /* ---------- Events ---------- */
+function resetSelDay(){ selDay = isCurMonthView() ? _today.d : null; }
 el("months").addEventListener("click", e=>{
   const b = e.target.closest(".month-chip"); if(!b) return;
-  curMonth = +b.dataset.m; render();
+  curMonth = +b.dataset.m; resetSelDay(); render();
 });
 document.querySelectorAll(".tab").forEach(t=> t.addEventListener("click", ()=>{ curTab = t.dataset.tab; render(); }));
 el("fab").addEventListener("click", ()=>{ curTab==="duty" ? dutySheet() : paySheet(); });
-el("yearPrev").addEventListener("click", ()=>{ curYear--; render(); });
-el("yearNext").addEventListener("click", ()=>{ curYear++; render(); });
+el("yearPrev").addEventListener("click", ()=>{ curYear--; resetSelDay(); render(); });
+el("yearNext").addEventListener("click", ()=>{ curYear++; resetSelDay(); render(); });
+el("todayBtn").addEventListener("click", ()=>{ curYear=_today.y; curMonth=_today.m; selDay=_today.d; render(); });
 el("main").addEventListener("click", e=>{
+  const vb = e.target.closest("[data-view]");
+  const db = e.target.closest("[data-day]");
   const pe = e.target.closest("[data-edit]");
   const de = e.target.closest("[data-editd]");
-  if (pe){ paySheet(state.sessions.find(s=>s.id===pe.dataset.edit)); }
+  if (vb){ if (curTab==="duty") dutyView = vb.dataset.view; else payView = vb.dataset.view; render(); }
+  else if (db){ selDay = +db.dataset.day; render(); }
+  else if (pe){ paySheet(state.sessions.find(s=>s.id===pe.dataset.edit)); }
   else if (de){ dutySheet(state.duties.find(s=>s.id===de.dataset.editd)); }
   else if (e.target.id==="resetBtn"){ load().then(render); }
 });
