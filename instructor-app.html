@@ -236,6 +236,11 @@
     border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--card-2);
   }
   .empty .em { font-size: 26px; display: block; margin-bottom: 8px; opacity: .6; }
+  .empty.tap {
+    cursor: pointer; color: var(--primary); font-weight: 700;
+    border-color: var(--primary); background: var(--primary-tint); transition: .12s;
+  }
+  .empty.tap:active { transform: scale(.98); }
 
   /* Duty */
   .duty {
@@ -289,15 +294,13 @@
     background: none; border: none; text-decoration: underline; cursor: pointer;
   }
 
-  /* FAB */
-  .fab {
-    margin-left: auto; flex: none;
-    width: 38px; height: 38px; border-radius: 50%;
-    background: var(--accent); color: #fff; border: none; font-size: 24px; cursor: pointer;
-    box-shadow: 0 2px 8px rgba(14,91,99,.3); display: grid; place-items: center;
-    transition: .15s;
+  /* 選取日標題列的小新增鈕 */
+  .day-add {
+    font-family: inherit; font-size: 11px; font-weight: 700; padding: 4px 12px;
+    border: 1.5px solid var(--primary); background: var(--card); color: var(--primary);
+    border-radius: 999px; cursor: pointer; margin-left: auto; align-self: center; transition: .12s;
   }
-  .fab:active { transform: scale(.9); }
+  .day-add:active { background: var(--primary-tint); transform: scale(.96); }
 
   /* Tab bar */
   nav.tabs {
@@ -385,7 +388,6 @@
         <div class="sub" id="hdrSub">授課鐘點・自動算金額</div>
       </div>
       <span class="demo-tag" style="color:var(--good);background:#e8f8f0;">☁ 雲端同步</span>
-      <button class="fab" id="fab" aria-label="新增">＋</button>
     </div>
     <div class="year-nav" id="yearNav">
       <button id="yearPrev">‹</button>
@@ -659,9 +661,9 @@ function calHtml(list, duties, mode){
   if (selDay){
     const info = byDay[selDay];
     const n = !info ? 0 : (mode==="pay" ? info.s.length + info.du.length : info.du.length);
-    html += `<div class="section-h"><h2>${curMonth}月${selDay}日 · 週${wk(curMonth,selDay)}${isCurMonthView()&&selDay===_today.d?"（今天）":""}</h2><span class="count">${n} 筆</span></div>`;
+    html += `<div class="section-h"><h2>${curMonth}月${selDay}日 · 週${wk(curMonth,selDay)}${isCurMonthView()&&selDay===_today.d?"（今天）":""}</h2><span class="count">${n} 筆</span><button class="day-add" data-addday="${selDay}">＋ 新增</button></div>`;
     if (!n){
-      html += `<div class="empty" style="padding:22px 20px">這天沒有${mode==="duty"?"值班":"紀錄"}，點右下角 ＋ 新增</div>`;
+      html += `<div class="empty tap" data-addday="${selDay}" style="padding:22px 20px">＋ 這天沒有${mode==="duty"?"值班":"紀錄"}，點這裡直接新增</div>`;
     } else if (mode==="pay"){
       html += `<div class="list">` + (info.s.map(entryHtml).join("")) + (info.du.map(dutyHtml).join("")) + `</div>`;
     } else {
@@ -701,9 +703,10 @@ function renderPay(){
   if (payView==="cal"){
     html += calHtml(list, duties);
   } else if (!list.length){
-    html += `<div class="empty"><span class="em">📋</span>${curMonth}月還沒有紀錄<br>點右下角 ＋ 新增一筆</div>`;
+    html += `<div class="empty tap" data-addday=""><span class="em">📋</span>${curMonth}月還沒有紀錄<br>點這裡新增第一筆</div>`;
   } else {
-    html += `<div class="list">` + list.map(entryHtml).join("") + `</div>`;
+    html += `<div class="list">` + list.map(entryHtml).join("") + `</div>`
+      + `<div class="empty tap" data-addday="" style="padding:13px 20px;margin-top:8px">＋ 新增一筆</div>`;
   }
   el("main").innerHTML = html;
 }
@@ -726,9 +729,10 @@ function renderDuty(){
   if (dutyView==="cal"){
     html += calHtml([], list, "duty");
   } else if (!list.length){
-    html += `<div class="empty"><span class="em">🗓️</span>${curMonth}月還沒有值班紀錄<br>點右下角 ＋ 新增一筆</div>`;
+    html += `<div class="empty tap" data-addday=""><span class="em">🗓️</span>${curMonth}月還沒有值班紀錄<br>點這裡新增第一筆</div>`;
   } else {
-    html += `<div class="list">` + list.map(dutyHtml).join("") + `</div>`;
+    html += `<div class="list">` + list.map(dutyHtml).join("") + `</div>`
+      + `<div class="empty tap" data-addday="" style="padding:13px 20px;margin-top:8px">＋ 新增一筆</div>`;
   }
   el("main").innerHTML = html;
 }
@@ -803,7 +807,6 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;"
 function render(){
   el("hdrTitle").textContent = curTab==="pay" ? "鐘點記錄" : curTab==="duty" ? "值班表" : "收入統計";
   el("hdrSub").textContent = curTab==="pay" ? "授課鐘點・自動算金額" : curTab==="duty" ? "每月值班・勤務登記" : "累計收入與分析";
-  el("fab").style.display = (curTab==="stat") ? "none" : "grid";
   el("yearLabel").textContent = curYear + " 年";
   el("yearNav").style.display = (curTab==="stat") ? "none" : "flex";
   renderMonths();
@@ -1017,17 +1020,18 @@ el("months").addEventListener("click", e=>{
   curMonth = +b.dataset.m; resetSelDay(); render();
 });
 document.querySelectorAll(".tab").forEach(t=> t.addEventListener("click", ()=>{ curTab = t.dataset.tab; render(); }));
-el("fab").addEventListener("click", ()=>{ curTab==="duty" ? dutySheet() : paySheet(); });
 el("yearPrev").addEventListener("click", ()=>{ curYear--; resetSelDay(); render(); });
 el("yearNext").addEventListener("click", ()=>{ curYear++; resetSelDay(); render(); });
 el("todayBtn").addEventListener("click", ()=>{ curYear=_today.y; curMonth=_today.m; selDay=_today.d; render(); });
 el("main").addEventListener("click", e=>{
   const vb = e.target.closest("[data-view]");
   const db = e.target.closest("[data-day]");
+  const ab = e.target.closest("[data-addday]");
   const pe = e.target.closest("[data-edit]");
   const de = e.target.closest("[data-editd]");
   if (vb){ if (curTab==="duty") dutyView = vb.dataset.view; else payView = vb.dataset.view; render(); }
   else if (db){ selDay = +db.dataset.day; render(); }
+  else if (ab){ curTab==="duty" ? dutySheet() : paySheet(); }
   else if (pe){ paySheet(state.sessions.find(s=>s.id===pe.dataset.edit)); }
   else if (de){ dutySheet(state.duties.find(s=>s.id===de.dataset.editd)); }
   else if (e.target.id==="resetBtn"){ load().then(render); }
